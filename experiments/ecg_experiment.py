@@ -10,6 +10,7 @@ import numpy as np
 import multiprocessing
 from itertools import repeat
 from models.baseline_wavelet import WaveletModel
+from models.baseline_resnet import ResNet
 
 
 class ECG_Experiment:
@@ -112,6 +113,8 @@ class ECG_Experiment:
             # load respective model
             if modeltype == 'WAVELET':
                 model = WaveletModel(modelname, n_classes, self.sampling_frequency, mpath, **modelparams)
+            if modeltype == 'RESNET':
+                model = ResNet()
         
             # fit model
             model.fit(self.X_train, self.y_train, self.X_val, self.y_val)
