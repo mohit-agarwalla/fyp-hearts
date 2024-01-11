@@ -11,11 +11,11 @@ def load_raw_data(df, sampling_rate, path):
     data = np.array([signal for signal, meta in data])
     return data
 
-path = "datasets\PTB-XL"
+path = 'path/to/ptbxl/'
 sampling_rate=100
 
 # load and convert annotation data
-Y = pd.read_csv(path+'\ptbxl_database.csv', index_col='ecg_id')
+Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
 Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
 
 # Load raw signal data
@@ -34,9 +34,6 @@ def aggregate_diagnostic(y_dic):
 
 # Apply diagnostic superclass
 Y['diagnostic_superclass'] = Y.scp_codes.apply(aggregate_diagnostic)
-
-print(X.shape)
-print(Y.shape)
 
 # Split data into train and test
 test_fold = 10
