@@ -2,9 +2,10 @@
 Adapted from: ___
 """
 
-from tensorflow.keras.layers import BatchNormalization, ReLu, Dropout, Conv1D, Layer, GlobalAveragePooling1D, MaxPooling1D
+from tensorflow.keras.layers import BatchNormalization, Dropout, Conv1D, Layer, GlobalAveragePooling1D, MaxPooling1D
+from tensorflow.keras.layers import ReLU as ReLu
 from tensorflow.keras.initializers import VarianceScaling
-from tensorflow.keras.optimizer import Adam
+from tensorflow.keras.optimizers import Adam
 
 def conv1d(filters, kernel_size=3, strides=1):
     return Conv1D(filters, kernel_size, strides=strides, 

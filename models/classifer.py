@@ -1,12 +1,12 @@
 import numpy as np
 from tensorflow.keras.metrics import AUC
-from wandb.keras import WandbCallback
+# from wandb.keras import WandbCallback
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras import Model
 from tensorflow.keras.callbacks import EarlyStopping
-from metrics import TimeHistory
+# from metrics import TimeHistory
 
-class Classifer(Model):
+class Classifier(Model):
     def __init__(self, model, input_size, n_classes, learning_rate=0.0001, epochs=20, path="output/"):
         super(Classifer, self).__init__()
         self.model = model
@@ -42,11 +42,11 @@ class Classifer(Model):
     def fit(self, x, y, validation_data):
         time_callback = TimeHistory()
         
-        es =EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
-        wandb_cb = WandbCallback(save_weights_only=True)
+        es = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
+#         wandb_cb = WandbCallback(save_weights_only=True)
         
         X_val,y_val = validation_data[0], validation_data[1]
         
-        super(Classifer, self).fit(x, y, validation_data=(X_val,y_val), callbacks=[es, time_callback, wandb_cb], epochs=self.epochs, batch_size=128)
+        super(Classifer, self).fit(x, y, validation_data=(X_val,y_val), callbacks=[es, time_callback], epochs=self.epochs, batch_size=128) #callbacks=[es, time_callback, wandb_cb]
         times = time_callback.times
         return times

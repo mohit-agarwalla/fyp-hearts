@@ -29,6 +29,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras import backend as K
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 
 def calculate_entropy(list_values):
     counter_values = Counter(list_values).most_common()
@@ -52,7 +53,8 @@ def calculate_crossings(list_values):
     zero_crossing_indices = np.nonzero(np.diff(np.array(list_values) > 0))[0]
     no_zero_crossing_indices = len(zero_crossing_indices)
     mean_crossing_indices = np.nonzero(np.diff(np.array(list_values) < np.nanmean(list_values)))[0]
-    return [no_zero_crossing_indices, mean_crossing_indices]
+    no_mean_crossings = len(mean_crossing_indices)
+    return [no_zero_crossing_indices, no_mean_crossings]
 
 def get_features(list_values):
     entropy = calculate_entropy(list_values)
@@ -72,7 +74,7 @@ def get_single_ecg_features(signal, waveletname='db6'):
 
 def get_ecg_features(ecg_data, parallel=True):
     if parallel:
-        pool = multiprocessing.Pool(18)
+        pool = multiprocessing.Pool(4)
         return np.array(pool.map(get_single_ecg_features, ecg_data))
     else:
         list_features = []
@@ -83,7 +85,7 @@ def get_ecg_features(ecg_data, parallel=True):
 
 
 class WaveletModel():
-    def __init__(self, n_classes, freq, outputfolder, regularizer_C=0.001, classifier='RF'):
+    def __init__(self, n_classes, freq, outputfolder, regularizer_C=0.001, classifier='RF', tree='hist'):
         # DISCLAIMER: Model assumes equal shapes across all samples
         
         # standard params
@@ -98,22 +100,36 @@ class WaveletModel():
         self.final_activation = 'sigmoid'
         self.n_dense_dim = 128
         self.epochs = 30
+        self.tree = 'hist'
     
     def fit(self, X_train, y_train, X_val,y_val):
-        XF_train = get_ecg_features(X_train)
+        XF_train = get_ecg_features(X_train, parallel=True)
         XF_val = get_ecg_features(X_val)
-        
+        print(XF_train)
+        print(XF_train.shape)
         if self.classifier == 'LR':
             if self.n_classes > 1:
                 clf = OneVsRestClassifier(LogisticRegression(C=self.regularizer_C, solver='lbfgs', max_iter=1000, n_jobs=-1))
             else:
                 clf = LogisticRegression(C=self.regularizer_C, solver='lbfgs', max_iter=1000, n_jobs=-1)
             clf.fit(XF_train, y_train)
-            pickle.dump(clf, open(self.outputfolder+'clf.pkl', 'w'))
+            pickle.dump(clf, open(self.outputfolder+'clf.pkl', 'wb'))
         elif self.classifier == 'RF':
             clf = RandomForestClassifier(n_estimators=1000, n_jobs=16)
             clf.fit(XF_train, y_train)
             pickle.dump(clf, open(self.outputfolder+'clf.pkl', 'wb'))
+        elif self.classifier == 'XGB':
+            # standardise
+            ss = StandardScaler()
+            XFT_train = ss.fit_transform(XF_train)
+            XFT_val = ss.transform(XF_val)
+            pickle.dump(ss, open(self.outputfolder+'ss.pkl', 'wb'))
+            
+            # classification stage
+            clf = XGBClassifier(tree_method=self.tree)
+            clf.fit(XFT_train, y_train)
+            pickle.dump(clf, open(self.outputfolder+'clf.pkl', 'wb'))
+            
         elif self.classifier == 'NN':
             # standardise input data
             ss = StandardScaler()
@@ -128,14 +144,14 @@ class WaveletModel():
             y = Dense(self.n_classes, activation=self.final_activation)(x)
             self.model = Model(input_x, y)
             
-            self.model.compile(optimizer='adamax', loss='binary_crossentropy') # metrics=[keras_macro_auc]
+            self.model.compile(optimizer='adamax', loss='categorical_crossentropy') # metrics=[keras_macro_auc]
             # monitor validation error
             # mc_score = ModelCheckpoint(self.outputfolder +'best_score_model.h5', monitor='val_keras_macro_auroc', mode='max', verbose=1, save_best_only=True)
             mc_loss = ModelCheckpoint(self.outputfolder+'best_loss_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
             self.model.fit(XFT_train, y_train, validation_data=(XFT_val, y_val), epochs=self.epochs, batch_size=128, callbacks=[mc_loss])#, mc_score)
             self.model.save(self.outputfolder+'last_model.h5')
     
-    def predict(self, X, y):
+    def predict(self, X):
         XF = get_ecg_features(X)
         if self.classifier == 'LR':
             clf = pickle.load(open(self.outputfolder+'clf.pkl', 'rb'))
@@ -148,10 +164,14 @@ class WaveletModel():
             y_pred = clf.predict_proba(XF)
             if self.n_classes > 1:
                 temp =np.array([[x[1] if x.shape[0]==2 else 0 for x in yi] for yi in y_pred ]).T
-                print(temp.shape)
                 return temp
             else:
                 return y_pred[:,1][:,np.newaxis]
+        elif self.classifier == "XGB":
+            clf = pickle.load(open(self.outputfolder+'clf.pkl', 'rb'))
+            ss = pickle.load(open(self.outputfolder+'ss.pkl', 'rb'))#
+            XFT = ss.transform(XF)
+            return clf.predict(XFT)
         elif self.classifier == 'NN':
             ss = pickle.load(open(self.outputfolder+'ss.pkl', 'rb'))#
             XFT = ss.transform(XF)

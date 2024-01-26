@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import wfdb
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
 import re
 import pickle
 from tqdm import tqdm
@@ -11,6 +11,8 @@ import os
 import ast
 from sklearn.metrics import fbeta_score, roc_auc_score, roc_curve, auc
 import glob
+import time
+import tensorflow as tf
 
 NOISE_DB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\mit-bih-noise-stress-test-database-1.0.0"
 PTB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\PTB-XL"
@@ -133,7 +135,7 @@ def load_raw_data_ptbxl(df, sampling_rate, path):
     
     return data
 
-def load_dataset(path, sampling_rate, single_lead=True, release=False):
+def load_dataset(path, sampling_rate, release=False):
     if 'PTB-XL' in path:
         # load data
         Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
@@ -142,9 +144,9 @@ def load_dataset(path, sampling_rate, single_lead=True, release=False):
         # load raw signal data
         X = load_raw_data_ptbxl(Y, sampling_rate, path)
         
-        # Remove data of other leads if looking for single lead only
-        if single_lead:
-            X = X[:,:,0]
+        # # Remove data of other leads if looking for single lead only
+        # if single_lead:
+        #     X = X[:,:,0]
         
     return X, Y
 
@@ -356,7 +358,7 @@ def evaluate_experiment(y_true, y_pred, thresholds):
 
 def generate_summary_table(selection=None, exps=None, folder='output/'):
     if exps is None:
-        exps = ['exp3']
+        exps = ['exp0', 'exp1', 'exp1.1', 'exp1.1.1', 'exp2', 'exp3']
     metric1 = 'macro_auc'
     
     # getmodels
