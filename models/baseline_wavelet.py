@@ -96,8 +96,8 @@ class WaveletModel():
         self.regularizer_C = regularizer_C
         self.classifier = classifier
         self.dropout = 0.25
-        self.activation = 'relu'
         self.final_activation = 'sigmoid'
+        self.activation = 'relu'
         self.n_dense_dim = 128
         self.epochs = 30
         self.tree = 'hist'

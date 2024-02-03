@@ -13,6 +13,8 @@ from sklearn.metrics import fbeta_score, roc_auc_score, roc_curve, auc
 import glob
 import time
 import tensorflow as tf
+import torch
+import random
 
 NOISE_DB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\mit-bih-noise-stress-test-database-1.0.0"
 PTB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\PTB-XL"
@@ -228,6 +230,12 @@ def compute_label_aggregations(df, folder, ctype):
 
     return df
 
+def select_subset(raw_labels, data, subset=['age', 'weight', 'sex', 'height']):
+    nan_indices = np.where(pd.isnull(raw_labels[subset]))[0]
+    new_data = np.delete(data, nan_indices, axis=0)
+    labels = raw_labels.dropna(subset=subset)
+    return labels, new_data
+
 def select_data(XX,YY, ctype, min_samples, output_folder):
     # Convert multilabel to multi-hot encoder
     mlb = MultiLabelBinarizer()
@@ -409,3 +417,240 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, batch, logs={}):
         self.times.append(time.time() - self.epoch_time_start)
+
+def get_appropriate_bootstrap(y_true, n_bootstrapping_samples):
+    samples = []
+    while True:
+        ridxs = np.random.randint(0,len(y_true), len(y_true))
+        if y_true[ridxs].sum(axis=0).min() != 0:
+            samples.append(ridxs)
+            if len(samples) == n_bootstrapping_samples:
+                break
+    
+    return samples
+
+def aggregate_predictions(preds,targs=None,idmap=None,aggregate_fn = np.mean,verbose=True):
+    '''
+    aggregates potentially multiple predictions per sample (can also pass targs for convenience)
+    idmap: idmap as returned by TimeSeriesCropsDataset's get_id_mapping
+    preds: ordered predictions as returned by learn.get_preds()
+    aggregate_fn: function that is used to aggregate multiple predictions per sample (most commonly np.amax or np.mean)
+    '''
+    if(idmap is not None and len(idmap)!=len(np.unique(idmap))):
+        if(verbose):
+            print("aggregating predictions...")
+            preds_aggregated = []
+            targs_aggregated = []
+            for i in np.unique(idmap):
+                preds_local = preds[np.where(idmap==i)[0]]
+                preds_aggregated.append(aggregate_fn(preds_local,axis=0))
+                if targs is not None:
+                    targs_local = targs[np.where(idmap==i)[0]]
+                    assert(np.all(targs_local==targs_local[0])) #all labels have to agree
+                    targs_aggregated.append(targs_local[0])
+            if(targs is None):
+                return np.array(preds_aggregated)
+            else:
+                return np.array(preds_aggregated),np.array(targs_aggregated)
+    else:
+        if(targs is None):
+            return preds
+        else:
+            return preds,targs
+
+
+class TimeseriesDatasetCrops(torch.utils.data.Dataset):
+    """timeseries dataset with partial crops."""
+
+    def __init__(self, df, output_size, chunk_length, min_chunk_length, memmap_filename=None, npy_data=None, random_crop=True, data_folder=None, num_classes=2, copies=0, col_lbl="label", stride=None, start_idx=0, annotation=False, transforms=[]):
+        """
+        accepts three kinds of input:
+        1) filenames pointing to aligned numpy arrays [timesteps,channels,...] for data and either integer labels or filename pointing to numpy arrays[timesteps,...] e.g. for annotations
+        2) memmap_filename to memmap for data [concatenated,...] and labels- label column in df corresponds to index in this memmap
+        3) npy_data [samples,ts,...] (either path or np.array directly- also supporting variable length input) - label column in df corresponds to sampleid
+        
+        transforms: list of callables (transformations) (applied in the specified order i.e. leftmost element first)
+        """
+        assert not((memmap_filename is not None) and (npy_data is not None))
+        #require integer entries if using memmap or npy
+        assert (memmap_filename is None and npy_data is None) or df.data.dtype==np.int64
+                        
+        self.timeseries_df = df
+        self.output_size = output_size
+        self.data_folder = data_folder
+        self.transforms = transforms
+        self.annotation = annotation
+        self.col_lbl = col_lbl
+
+        self.c = num_classes
+
+        self.mode="files"
+        self.memmap_filename = memmap_filename
+        if(memmap_filename is not None):
+            self.mode="memmap"
+            memmap_meta = np.load(memmap_filename.parent/(memmap_filename.stem+"_meta.npz"))
+            self.memmap_start = memmap_meta["start"]
+            self.memmap_shape = tuple(memmap_meta["shape"])
+            self.memmap_length = memmap_meta["length"]
+            self.memmap_dtype = np.dtype(str(memmap_meta["dtype"]))
+            self.memmap_file_process_dict = {}
+            if(annotation):
+                memmap_meta_label = np.load(memmap_filename.parent/(memmap_filename.stem+"_label_meta.npz"))
+                self.memmap_filename_label = memmap_filename.parent/(memmap_filename.stem+"_label.npy")
+                self.memmap_shape_label = tuple(memmap_meta_label["shape"])
+                self.memmap_file_process_dict_label = {}
+                self.memmap_dtype_label = np.dtype(str(memmap_meta_label["dtype"]))
+        elif(npy_data is not None):
+            self.mode="npy"
+            if(isinstance(npy_data,np.ndarray) or isinstance(npy_data,list)):
+                self.npy_data = np.array(npy_data)
+                assert(annotation is False)
+            else:
+                self.npy_data = np.load(npy_data)
+            if(annotation):
+                self.npy_data_label = np.load(npy_data.parent/(npy_data.stem+"_label.npy"))
+        
+        self.random_crop = random_crop
+
+        self.df_idx_mapping=[]
+        self.start_idx_mapping=[]
+        self.end_idx_mapping=[]
+
+        for df_idx,(id,row) in enumerate(df.iterrows()):
+            if(self.mode=="files"):
+                data_length = row["data_length"]
+            elif(self.mode=="memmap"):
+                data_length= self.memmap_length[row["data"]]
+            else: #npy 
+                data_length = len(self.npy_data[row["data"]])
+                                              
+            if(chunk_length == 0):#do not split
+                idx_start = [start_idx]
+                idx_end = [data_length]
+            else:
+                idx_start = list(range(start_idx,data_length,chunk_length if stride is None else stride))
+                idx_end = [min(l+chunk_length, data_length) for l in idx_start]
+
+            #remove final chunk(s) if too short
+            for i in range(len(idx_start)):
+                if(idx_end[i]-idx_start[i]< min_chunk_length):
+                    del idx_start[i:]
+                    del idx_end[i:]
+                    break
+            #append to lists
+            for _ in range(copies+1):
+                for i_s,i_e in zip(idx_start,idx_end):
+                    self.df_idx_mapping.append(df_idx)
+                    self.start_idx_mapping.append(i_s)
+                    self.end_idx_mapping.append(i_e)
+                    
+    def __len__(self):
+        return len(self.df_idx_mapping)
+
+    def __getitem__(self, idx):
+        df_idx = self.df_idx_mapping[idx]
+        start_idx = self.start_idx_mapping[idx]
+        end_idx = self.end_idx_mapping[idx]
+        #determine crop idxs
+        timesteps= end_idx - start_idx
+        assert(timesteps>=self.output_size)
+        if(self.random_crop):#random crop
+            if(timesteps==self.output_size):
+                start_idx_crop= start_idx
+            else:
+                start_idx_crop = start_idx + random.randint(0, timesteps - self.output_size -1)#np.random.randint(0, timesteps - self.output_size)
+        else:
+            start_idx_crop = start_idx + (timesteps - self.output_size)//2
+        end_idx_crop = start_idx_crop+self.output_size
+
+        #print(idx,start_idx,end_idx,start_idx_crop,end_idx_crop)
+        #load the actual data
+        if(self.mode=="files"):#from separate files
+            data_filename = self.timeseries_df.iloc[df_idx]["data"]
+            if self.data_folder is not None:
+                data_filename = self.data_folder/data_filename
+            data = np.load(data_filename)[start_idx_crop:end_idx_crop] #data type has to be adjusted when saving to npy
+            
+            ID = data_filename.stem
+
+            if(self.annotation is True):
+                label_filename = self.timeseries_df.iloc[df_idx][self.col_lbl]
+                if self.data_folder is not None:
+                    label_filename = self.data_folder/label_filename
+                label = np.load(label_filename)[start_idx_crop:end_idx_crop] #data type has to be adjusted when saving to npy
+            else:
+                label = self.timeseries_df.iloc[df_idx][self.col_lbl] #input type has to be adjusted in the dataframe
+        elif(self.mode=="memmap"): #from one memmap file
+            ID = self.timeseries_df.iloc[df_idx]["data_original"].stem
+            memmap_idx = self.timeseries_df.iloc[df_idx]["data"] #grab the actual index (Note the df to create the ds might be a subset of the original df used to create the memmap)
+            idx_offset = self.memmap_start[memmap_idx]
+            
+            pid = os.getpid()
+            #print("idx",idx,"ID",ID,"idx_offset",idx_offset,"start_idx_crop",start_idx_crop,"df_idx", self.df_idx_mapping[idx],"pid",pid)
+            mem_file = self.memmap_file_process_dict.get(pid, None)  # each process owns its handler.
+            if mem_file is None:
+                #print("memmap_shape", self.memmap_shape)
+                mem_file = np.memmap(self.memmap_filename, self.memmap_dtype, mode='r', shape=self.memmap_shape)
+                self.memmap_file_process_dict[pid] = mem_file
+            data = np.copy(mem_file[idx_offset + start_idx_crop: idx_offset + end_idx_crop])
+            #print(mem_file[idx_offset + start_idx_crop: idx_offset + end_idx_crop])
+            if(self.annotation):
+                mem_file_label = self.memmap_file_process_dict_label.get(pid, None)  # each process owns its handler.
+                if mem_file_label is None:
+                    mem_file_label = np.memmap(self.memmap_filename_label, self.memmap_dtype, mode='r', shape=self.memmap_shape_label)
+                    self.memmap_file_process_dict_label[pid] = mem_file_label
+                label = np.copy(mem_file_label[idx_offset + start_idx_crop: idx_offset + end_idx_crop])
+            else:
+                label = self.timeseries_df.iloc[df_idx][self.col_lbl]
+        else:#single npy array
+            ID = self.timeseries_df.iloc[df_idx]["data"]
+            
+            data = self.npy_data[ID][start_idx_crop:end_idx_crop]
+            
+            if(self.annotation):
+                label = self.npy_data_label[ID][start_idx_crop:end_idx_crop]
+            else:
+                label = self.timeseries_df.iloc[df_idx][self.col_lbl]
+        sample = {'data': data, 'label': label, 'ID':ID}
+        
+        for t in self.transforms:
+            sample = t(sample)
+
+        return sample
+    
+    def get_sampling_weights(self, class_weight_dict,length_weighting=False, group_by_col=None):
+        assert(self.annotation is False)
+        assert(length_weighting is False or group_by_col is None)
+        weights = np.zeros(len(self.df_idx_mapping),dtype=np.float32)
+        length_per_class = {}
+        length_per_group = {}
+        for iw,(i,s,e) in enumerate(zip(self.df_idx_mapping,self.start_idx_mapping,self.end_idx_mapping)):
+            label = self.timeseries_df.iloc[i][self.col_lbl]
+            weight = class_weight_dict[label]
+            if(length_weighting):
+                if label in length_per_class.keys():
+                    length_per_class[label] += e-s
+                else:
+                    length_per_class[label] = e-s
+            if(group_by_col is not None):
+                group = self.timeseries_df.iloc[i][group_by_col]
+                if group in length_per_group.keys():
+                    length_per_group[group] += e-s
+                else:
+                    length_per_group[group] = e-s
+            weights[iw] = weight
+
+        if(length_weighting):#need second pass to properly take into account the total length per class
+            for iw,(i,s,e) in enumerate(zip(self.df_idx_mapping,self.start_idx_mapping,self.end_idx_mapping)):
+                label = self.timeseries_df.iloc[i][self.col_lbl]
+                weights[iw]= (e-s)/length_per_class[label]*weights[iw]
+        if(group_by_col is not None):
+            for iw,(i,s,e) in enumerate(zip(self.df_idx_mapping,self.start_idx_mapping,self.end_idx_mapping)):
+                group = self.timeseries_df.iloc[i][group_by_col]
+                weights[iw]= (e-s)/length_per_group[group]*weights[iw]
+
+        weights = weights/np.min(weights)#normalize smallest weight to 1
+        return weights
+
+    def get_id_mapping(self):
+        return self.df_idx_mapping
