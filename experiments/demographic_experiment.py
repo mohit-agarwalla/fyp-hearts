@@ -65,7 +65,7 @@ class DEMO_Experiment:
         self.labels = utils.compute_label_aggregations(self.labels, self.datafolder, self.task)
         
         # One hot encode relevant data
-        self.data, self.labels, self.Y, _ = utils.select_data(self.data, self.labels, self.task, self.min_samples, self.outputfolder+self.experiment_name+'/data/')
+        self.data, self.labels, self.Y, self.demographics, _ = utils.select_data_demo(self.data, self.labels, self.task, self.min_samples, self.outputfolder+self.experiment_name+'/data/', self.demographics)
         self.input_shape = self.data[0].shape
         
         # 10th fold for testing (9th for now)
@@ -161,47 +161,44 @@ class DEMO_Experiment:
                 es = EarlyStopping(monitor='val_loss', patience=6)
                 model.fit(X_train, self.y_train, (X_val,self.y_val), mpath)
                 
-                
-                
-        
-            
+
             # predict and dump
             model.predict(X_train, demographic_train).dump(mpath+'y_train_pred.npy')
             model.predict(X_val, demographic_val).dump(mpath+'y_val_pred.npy')
             model.predict(X_test, demographic_test).dump(mpath+'y_test_pred.npy')
             
-#         modelname = 'ensemble'
+        modelname = 'ensemble'
         
-#         # create ensemble preds by simple mean across all model preds
-#         ensemblepath = self.outputfolder+self.experiment_name+ '/models/'+modelname+'/'
-#         # create folder for model outputs
-#         if not os.path.exists(ensemblepath):
-#             os.makedirs(ensemblepath)
-#         if not os.path.exists(ensemblepath+'/results/'):
-#             os.makedirs(ensemblepath+'/results/')
+        # create ensemble preds by simple mean across all model preds
+        ensemblepath = self.outputfolder+self.experiment_name+ '/models/'+modelname+'/'
+        # create folder for model outputs
+        if not os.path.exists(ensemblepath):
+            os.makedirs(ensemblepath)
+        if not os.path.exists(ensemblepath+'/results/'):
+            os.makedirs(ensemblepath+'/results/')
         
-#         ensemble_train, ensemble_val, ensemble_test = [], [], []
-#         for model_desc in os.listdir(self.outputfolder+self.experiment_name+'/models/'):
-#             if model_desc not in ['ensemble', 'naive']:
-#                 mpath = self.outputfolder+self.experiment_name+'/models/'+model_desc+'/'
-#                 ensemble_train.append(np.load(mpath+'y_train_pred.npy', allow_pickle=True))
-#                 ensemble_val.append(np.load(mpath+'y_val_pred.npy', allow_pickle=True))
-#                 ensemble_test.append(np.load(mpath+'y_test_pred.npy', allow_pickle=True))
+        ensemble_train, ensemble_val, ensemble_test = [], [], []
+        for model_desc in os.listdir(self.outputfolder+self.experiment_name+'/models/'):
+            if model_desc not in ['ensemble', 'naive']:
+                mpath = self.outputfolder+self.experiment_name+'/models/'+model_desc+'/'
+                ensemble_train.append(np.load(mpath+'y_train_pred.npy', allow_pickle=True))
+                ensemble_val.append(np.load(mpath+'y_val_pred.npy', allow_pickle=True))
+                ensemble_test.append(np.load(mpath+'y_test_pred.npy', allow_pickle=True))
         
-#         print(len(ensemble_test))
-#         print(f"ensemble test -1 is {ensemble_test[-1]}")
-#         print(f"Ensemble val is {(ensemble_val)}") 
-#         print(f"Ensemble test is {(ensemble_test)}") 
-#         print(f"{(ensemble_train)}") 
-#         print(f"Ensemble train shape is {np.array(ensemble_train).shape}") 
+        print(len(ensemble_test))
+        print(f"ensemble test -1 is {ensemble_test[-1]}")
+        print(f"Ensemble val is {(ensemble_val)}") 
+        print(f"Ensemble test is {(ensemble_test)}") 
+        print(f"{(ensemble_train)}") 
+        print(f"Ensemble train shape is {np.array(ensemble_train).shape}") 
         
-#         print(f"Ensemble test shape is {np.array(ensemble_test).shape}") 
+        print(f"Ensemble test shape is {np.array(ensemble_test).shape}") 
         
-#         print(f"Ensemble val shape is {np.array(ensemble_val).shape}")  
-#         # dump mean predictions
-#         np.array(ensemble_train).mean(axis=0).dump(ensemblepath + 'y_train_pred.npy')
-#         np.array(ensemble_test).mean(axis=0).dump(ensemblepath + 'y_test_pred.npy')
-#         np.array(ensemble_val).mean(axis=0).dump(ensemblepath + 'y_val_pred.npy')
+        print(f"Ensemble val shape is {np.array(ensemble_val).shape}")  
+        # dump mean predictions
+        np.array(ensemble_train).mean(axis=0).dump(ensemblepath + 'y_train_pred.npy')
+        np.array(ensemble_test).mean(axis=0).dump(ensemblepath + 'y_test_pred.npy')
+        np.array(ensemble_val).mean(axis=0).dump(ensemblepath + 'y_val_pred.npy')
     
     def evaluate(self, n_bootstrapping_samples=100, n_jobs=2, bootstrap_eval=False, dumped_bootstraps=True):
         # get labels

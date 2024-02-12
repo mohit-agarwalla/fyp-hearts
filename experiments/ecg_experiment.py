@@ -11,6 +11,8 @@ import multiprocessing
 from itertools import repeat
 from models.baseline_wavelet import WaveletModel
 from models.baseline_resnet import ResNet
+from models.classifer import Classifier
+from tensorflow.keras.callbacks import EarlyStopping
 
 
 class ECG_Experiment:
@@ -18,7 +20,7 @@ class ECG_Experiment:
     Run standard experiments on ECG datasets
     """
     
-    def __init__(self, experiment_name, task, datafolder, outputfolder, models, sampling_frequency=100, min_samples=0, train_fold=8, val_fold=9, test_fold=10, folds_type='strat', single_lead=False):
+    def __init__(self, experiment_name, task, datafolder, outputfolder, models, sampling_frequency=100, min_samples=0, train_fold=8, val_fold=9, test_fold=10, folds_type='strat'):
         """
         Parameters:
         experiment_name : str
@@ -36,7 +38,8 @@ class ECG_Experiment:
         self.val_fold = val_fold
         self.test_fold = test_fold
         self.folds_type = folds_type
-        self.single_lead = single_lead
+        
+        print(self.models)
         
         # if needed create folder structure
         if not os.path.exists(self.outputfolder+self.experiment_name):
@@ -48,9 +51,11 @@ class ECG_Experiment:
         if not os.path.exists(self.outputfolder+self.experiment_name+'/data/'):
             os.makedirs(self.outputfolder+self.experiment_name+'/data/')
         
+        print(self.outputfolder+self.experiment_name+'/data/')
+        
     def prepare(self):
         # Load PTB-XL data
-        self.data, self.raw_labels = utils.load_dataset(self.datafolder, self.sampling_frequency, self.single_lead)
+        self.data, self.raw_labels = utils.load_dataset(self.datafolder, self.sampling_frequency)
         
         # Preprocess label data
         self.labels = utils.compute_label_aggregations(self.raw_labels, self.datafolder, self.task)
@@ -101,6 +106,8 @@ class ECG_Experiment:
             modeltype = model_desc['modeltype']
             modelparams = model_desc['modelparams']
             
+            print(f"Model is {model_desc}")
+            
             mpath = self.outputfolder+self.experiment_name+'/models/'+modelname+'/'
             # Create folder for model outputs
             if not os.path.exists(mpath):
@@ -110,18 +117,38 @@ class ECG_Experiment:
             
             n_classes = self.Y.shape[1]
             
+            if 'lead1' in modelname:
+                X_train = self.X_train[:,:,0].reshape(self.X_train.shape[0], self.X_train.shape[1], 1)
+                X_test = self.X_test[:,:,0].reshape(self.X_test.shape[0], self.X_test.shape[1], 1)
+                X_val = self.X_val[:,:,0].reshape(self.X_val.shape[0], self.X_val.shape[1], 1)
+            else:
+                X_train = self.X_train
+                X_test = self.X_test
+                X_val = self.X_val
+            
             # load respective model
             if modeltype == 'WAVELET':
-                model = WaveletModel(modelname, n_classes, self.sampling_frequency, mpath, **modelparams)
+                model = WaveletModel(n_classes, self.sampling_frequency, mpath, **modelparams)
+                # fit model
+                model.fit(X_train, self.y_train, X_val, self.y_val)
             if modeltype == 'RESNET':
-                model = ResNet()
+                resnet = ResNet(**modelparams)
+                model = Classifier(model=model, input_size=1000, learning_rate=0.0001)
+                model.add_compile()
+                es = EarlyStopping(monitor='val_loss', patience=6)
+                model.fit(X_train, self.y_train, (X_val,self.y_val), mpath)
+                
+            if modeltype == "fastai_model":  
+                from models.fastai_model import fastai_model
+                model = fastai_model(modelname, n_classes, self.sampling_frequency, mpath,self.input_shape, **modelparams)
+                model.fit(self.X_train, self.y_train, self.X_val, self.y_val) 
+                
         
-            # fit model
-            model.fit(self.X_train, self.y_train, self.X_val, self.y_val)
+            
             # predict and dump
-            model.predict(self.X_train).dump(mpath+'y_train_pred.npy')
-            model.predict(self.X_val).dump(mpath+'y_val_pred.npy')
-            model.predict(self.X_test).dump(mpath+'y_test_pred.npy')
+            model.predict(X_train).dump(mpath+'y_train_pred.npy')
+            model.predict(X_val).dump(mpath+'y_val_pred.npy')
+            model.predict(X_test).dump(mpath+'y_test_pred.npy')
             
         modelname = 'ensemble'
         
