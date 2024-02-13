@@ -315,6 +315,81 @@ def select_data(XX,YY, ctype, min_samples, output_folder):
     
     return X, Y, y, mlb
 
+def select_data_demo(XX,YY, ctype, min_samples, output_folder, demographics):
+    # Convert multilabel to multi-hot encoder
+    mlb = MultiLabelBinarizer()
+    
+    if ctype == 'diagnostic':
+        X = XX[YY.diagnostic_len > 0]
+        Y = YY[YY.diagnostic_len > 0]
+        mlb.fit(Y.diagnostic.values)
+        y = mlb.transform(Y.diagnostic.values)
+        
+    elif ctype == 'subdiagnostic':
+        counts = pd.Series(np.concatenate(YY.subdiagnostic.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.subdiagnostic = YY.subdiagnostic.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['subdiagnostic_len'] = YY.subdiagnostic.apply(lambda x: len(x))
+        X = XX[YY.subdiagnostic_len > 0]
+        Y = YY[YY.subdiagnostic_len > 0]
+        demographics = demographics[YY.subdiagnostic_len > 0]
+        mlb.fit(Y.subdiagnostic.values)
+        y = mlb.transform(Y.subdiagnostic.values)
+    
+    
+    elif ctype == 'superdiagnostic':
+        counts = pd.Series(np.concatenate(YY.superdiagnostic.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.superdiagnostic = YY.superdiagnostic.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['superdiagnostic_len'] = YY.superdiagnostic.apply(lambda x: len(x))
+        X = XX[YY.superdiagnostic_len > 0]
+        Y = YY[YY.superdiagnostic_len > 0]
+        demographics = demographics[YY.superdiagnostic_len > 0]
+        mlb.fit(Y.superdiagnostic.values)
+        y = mlb.transform(Y.superdiagnostic.values)
+    
+    elif ctype == 'form':
+        counts = pd.Series(np.concatenate(YY.form.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.form = YY.form.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['form_len'] = YY.form.apply(lambda x: len(x))
+        X = XX[YY.form_len > 0]
+        Y = YY[YY.form_len > 0]
+        demographics = demographics[YY.form_len > 0]
+        mlb.fit(Y.form.values)
+        y = mlb.transform(Y.form.values)
+    
+    elif ctype == 'rhythm':
+        counts = pd.Series(np.concatenate(YY.rhythm.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.rhythm = YY.rhythm.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['rhythm_len'] = YY.rhythm.apply(lambda x: len(x))
+        X = XX[YY.rhythm_len > 0]
+        Y = YY[YY.rhythm_len > 0]
+        demographics = demographics[YY.rhythm_len > 0]
+        mlb.fit(Y.rhythm.values)
+        y = mlb.transform(Y.rhythm.values)
+    
+    elif ctype == 'all':
+        counts = pd.Series(np.concatenate(YY.all_scp.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.all_scp = YY.all_scp.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['all_scp_len'] = YY.all_scp.apply(lambda x: len(x))
+        X = XX[YY.all_scp_len > 0]
+        Y = YY[YY.all_scp_len > 0]
+        demographics = demographics[YY.all_scp_len > 0]
+        mlb.fit(Y.all_scp.values)
+        y = mlb.transform(Y.all_scp.values)
+    
+    else:
+        pass
+    
+    # Save the local binarizer
+    with open(output_folder+'mlb.pkl', 'wb') as tokenizer:
+        pickle.dump(mlb, tokenizer)
+    
+    return X, Y, y, demographics, mlb
+
 def apply_standard_scaler(X, ss):
     X_tmp = []
     
@@ -374,6 +449,7 @@ def generate_summary_table(selection=None, exps=None, folder='output/'):
     for i,exp in enumerate(exps):
         if selection is None:
             exp_models = [m.split('/')[-1] for m in glob.glob(f'{folder}{exp}/models/*')]
+            print(exp_models)
         else:
             exp_models = selection
         if i==0:
@@ -457,6 +533,73 @@ def aggregate_predictions(preds,targs=None,idmap=None,aggregate_fn = np.mean,ver
             return preds
         else:
             return preds,targs
+        
+def valid_labels(task,labels):
+    if task == 'all':
+        labels = labels[labels.all_scp_len > 0]
+    elif task == 'rhythm':
+        labels = labels[labels.rhythm_len > 0]
+    elif task == 'form':
+        labels = labels[labels.form_len > 0]
+    elif task == 'superdiagnostic':
+        labels = labels[labels.superdiagnostic_len > 0]
+    elif task == 'subdiagnostic':
+        labels = labels[labels.subdiagnostic_len > 0]
+    elif task == 'diagnostic':
+        labels = labels[labels.diagnostic_len > 0]
+    
+    return labels
+        
+
+def analyse_by_sex(experiment, models, datafolder, outputfolder, sampling_rate=100):
+    name, task = experiment[0], experiment[1]
+    # Find relevant data to determine whether to contain or not contain
+    _, raw_labels = load_dataset(datafolder, sampling_rate=sampling_rate)
+    labels = compute_label_aggregations(raw_labels, datafolder, task)
+    test_labels = valid_labels(task, labels)
+    test_labels = test_labels[test_labels.strat_fold==10] # only consider test folds
+    print(test_labels.shape)
+
+    # idxs where male/female
+    test_labels_male = np.where(test_labels.sex==0)   
+    test_labels_female = np.where(test_labels.sex==1)
+    
+    print(name)
+    auc_exp = {}
+    
+    for model in models:
+        # load y_test and y_pred_test
+        modelname = model['modelname']
+        if 'demo' in outputfolder:
+            y_path = outputfolder+"\\experiments\\"+name+"\\data\y_test.npy"
+            y_pred_path = outputfolder+"\\experiments\\"+name+"\\models\\"+modelname+"\\y_test_pred.npy"
+        else:
+            y_path = outputfolder+"\\"+name+"\\data\y_test.npy"
+            y_pred_path = outputfolder+"\\"+name+"\\models\\"+modelname+"\\y_test_pred.npy"
+        
+        y = np.load(y_path, allow_pickle=True)
+        y_pred = np.load(y_pred_path, allow_pickle=True)
+        print(modelname, y.shape, y_pred.shape)
+        y_male = y[test_labels_male]
+        y_male = y_male[:,[i for i in range(y_male.shape[1]) if len(np.unique(y_male[:,i])) == 2]]
+        y_female = y[test_labels_female]
+        y_female = y_female[:,[i for i in range(y_female.shape[1]) if len(np.unique(y_female[:,i])) == 2]]
+        
+        y_pred_male = y_pred[test_labels_male]
+        y_pred_male = y_pred_male[:,[i for i in range(y_male.shape[1]) if len(np.unique(y_male[:,i])) == 2]]
+        y_pred_female = y_pred[test_labels_female]
+        y_pred_female = y_pred_female[:,[i for i in range(y_female.shape[1]) if len(np.unique(y_female[:,i])) == 2]]
+        
+        auc_male = evaluate_experiment(y_male, y_pred_male, thresholds=None).values[0][0]
+        auc_female = evaluate_experiment(y_female, y_pred_female, thresholds=None).values[0][0]
+        auc_exp[modelname] = [auc_male, auc_female]
+    
+    print(auc_exp)
+    return auc_exp
+            
+            
+            
+            
 
 
 class TimeseriesDatasetCrops(torch.utils.data.Dataset):
