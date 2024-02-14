@@ -5,24 +5,33 @@ from configs.demo_wavelet_configs import *
 
 def main():
     
-    outputfolder = os.getcwd()+'/output/'
+    outputfolder = os.getcwd()+'demo_experiment/output/'
     datafolder = os.getcwd()+'/datasets/PTB-XL/'
     
     models = [
         conf_wavelet_standard_rf,
         conf_wavelet_demo_standard_rf,
-#         conf_wavelet_standard_nn,
-        # conf_wavelet_single_nn,
+        conf_wavelet_standard_nn,
+        conf_wavelet_single_nn,
         conf_wavelet_single_rf,
         conf_wavelet_demo_single_rf,
-        # conf_wavelet_single_xgb,
-        # conf_wavelet_standard_xgb,
+        conf_wavelet_single_xgb,
+        conf_wavelet_standard_xgb,
+        conf_wavelet_demo_standard_lr,
+        conf_wavelet_demo_standard_rf,
+        conf_wavelet_demo_standard_nn,
+        conf_wavelet_demo_single_rf,
+        conf_wavelet_demo_single_nn,
+        conf_wavelet_demo_standard_xgb,
+        conf_wavelet_demo_single_xgb
     ]
+    models = models.reverse()
+    
     
     experiments = [
-        ('exp0', 'all'),
-        ('exp1', 'diagnostic'),
-        ('exp1.1', 'subdiagnostic'),
+        # ('exp0', 'all'),
+        # ('exp1', 'diagnostic'),
+        # ('exp1.1', 'subdiagnostic'),
         ('exp1.1.1', 'superdiagnostic'),
         ('exp2', 'form'),
         ('exp3', 'rhythm')
@@ -41,7 +50,7 @@ def main():
     
     
     # generate summary table
-    utils.generate_summary_table()
+    utils.generate_summary_table(folder='demo_experiment/output')
 
 if __name__ == '__main__':
     main()

@@ -65,7 +65,7 @@ class ResNet(Layer):
         self.kernel_size = kernel_size
         self.block_fn = block_fn
         self.dropout = dropout
-        self.loss = 'categorial_crossentropy'
+        self.loss = 'categorical_crossentropy'
         self.model_name = 'resnet'
     
     def build(self, input_shape):

@@ -60,8 +60,8 @@ class ECG_Experiment:
         # Preprocess label data
         self.labels = utils.compute_label_aggregations(self.raw_labels, self.datafolder, self.task)
         
-        # One hot encode relevant data
         self.data, self.labels, self.Y, _ = utils.select_data(self.data, self.labels, self.task, self.min_samples, self.outputfolder+self.experiment_name+'/data/')
+        # One hot encode relevant data
         self.input_shape = self.data[0].shape
         
         # 10th fold for testing (9th for now)
@@ -133,10 +133,10 @@ class ECG_Experiment:
                 model.fit(X_train, self.y_train, X_val, self.y_val)
             if modeltype == 'RESNET':
                 resnet = ResNet(**modelparams)
-                model = Classifier(model=model, input_size=1000, learning_rate=0.0001)
+                model = Classifier(model=resnet, input_size=1000, n_classes=n_classes, learning_rate=0.0001)
                 model.add_compile()
                 es = EarlyStopping(monitor='val_loss', patience=6)
-                model.fit(X_train, self.y_train, (X_val,self.y_val), mpath)
+                model.fit(X_train, self.y_train, (X_val,self.y_val))
                 
             if modeltype == "fastai_model":  
                 from models.fastai_model import fastai_model

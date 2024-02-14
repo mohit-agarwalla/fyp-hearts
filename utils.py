@@ -466,7 +466,10 @@ def generate_summary_table(selection=None, exps=None, folder='output/'):
         
         for e in exps:
             try:
-                me_res = pd.read_csv(folder+str(e)+'/models/'+str(model)+'/results/te_results.csv', index_col=0)
+                if 'models' in model:
+                    me_res = pd.read_csv(folder+str(e)+'/'+str(model)+'/results/te_results.csv', index_col=0)
+                else:
+                    me_res = pd.read_csv(folder+str(e)+'/models/'+str(model)+'/results/te_results.csv', index_col=0)
                 
                 mean1 = me_res.loc['point'][metric1]
                 unc1 = max(me_res.loc['upper'][metric1]-me_res.loc['point'][metric1], me_res.loc['point'][metric1]-me_res.loc['lower'][metric1])
@@ -797,3 +800,13 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
 
     def get_id_mapping(self):
         return self.df_idx_mapping
+
+class TimeHistory(tf.keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        self.times = []
+
+    def on_epoch_begin(self, batch, logs={}):
+        self.epoch_time_start = time.time()
+
+    def on_epoch_end(self, batch, logs={}):
+        self.times.append(time.time() - self.epoch_time_start)
