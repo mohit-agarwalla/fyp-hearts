@@ -85,7 +85,7 @@ class ResNet(Layer):
         super().build(input_shape)
     
     def get_optimizer(self, lr):
-        return Adam(lr=lr)
+        return Adam(learning_rate=lr)
     
     
     @staticmethod

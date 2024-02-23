@@ -8,7 +8,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from utils import TimeHistory
 
 class Classifier(Model):
-    def __init__(self, model, input_size, n_classes, learning_rate=0.0001, epochs=20, path="output/"):
+    def __init__(self, model, input_size, n_classes, learning_rate=0.0001, epochs=20, path="output/", leads=12):
         super(Classifier, self).__init__()
         self.model = model
         self.input_size = input_size
@@ -16,17 +16,18 @@ class Classifier(Model):
         self.lr = learning_rate
         self.epochs = epochs
         self.path = path
+        self.leads = leads
 
         # Activation fn on end depends on number of outputs
         out_act = 'sigmoid' if n_classes > 1 else 'softmax'
         units = n_classes if n_classes>2 else 1
-        self.classifer = Dense(units=units, activation=out_act)        
+        self.classifer = Dense(units=units, input_shape=(leads*input_size,), activation=out_act)        
         
     def add_compile(self):
         self.compile(optimizer=self.model.get_optimizer(self.lr),loss = self.model.loss, metrics = ['acc', AUC(multi_label=True)])
         
     def summary(self):
-        input_layer = Input(shape=(self.input_size, 1,), dtype='float32')
+        input_layer = Input(shape=(self.input_size, self.leads,), dtype='float32')
         model = Model(inputs=input_layer, outputs=self.call(input_layer))
         
         return model.summary()
