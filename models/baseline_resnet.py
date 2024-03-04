@@ -1,93 +1,76 @@
-""""
-Adapted from: ___
-"""
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Conv1D, BatchNormalization, Activation, Add, MaxPooling1D, GlobalAveragePooling1D, Dense
+from tensorflow.keras.models import load_model
 
-from tensorflow.keras.layers import BatchNormalization, Dropout, Conv1D, Layer, GlobalAveragePooling1D, MaxPooling1D
-from tensorflow.keras.layers import ReLU as ReLu
-from tensorflow.keras.initializers import VarianceScaling
-from tensorflow.keras.optimizers import Adam
-
-def conv1d(filters, kernel_size=3, strides=1):
-    return Conv1D(filters, kernel_size, strides=strides, 
-                  padding='same', use_bias=False, kernel_initializer=VarianceScaling)
-
-class ResidualBlock(Layer):
-    def __init__(self, filters, kernel_size=3, strides=1, dropout=0, **kwargs):
-        super().__init__(**kwargs)
+class Resnet():
+    def __init__(self, n_classes, freq, outputfolder, batchsize=32, epochs=75, leads=12, filters=[64,64,64], **params):
+        self.n_classes = n_classes
+        self.freq = freq
+        self.outputfolder = outputfolder
+        self.batchsize = batchsize
+        self.epochs = epochs
+        self.leads = leads
         self.filters = filters
-        self.kernel_size = kernel_size
-        self.strides = strides
-        self.dropout = dropout
-        
-    def build(self,input_shape):
-        num_chan = input_shape[-1]
-        self.conv1 = conv1d(self.filters, self.kernel_size, self.strides)
-        self.bn1 = BatchNormalization(momentum=0.9, epsilon=1e-5)
-        self.relu1 = ReLu()
-        self.dropout1 = Dropout(self.dropout)
-        self.conv2 = conv1d(self.filters, self.kernel_size, 1)
-        self.bn2 = BatchNormalization(momentum=0.9, epsilon=1e-5)
-        self.relu2 = ReLu()
+    
+    def residual_block(self, x, filters, kernel_size=3,stride=1):
+        y = Conv1D(filters, kernel_size=kernel_size, strides=stride, padding='same')(x)
+        y = BatchNormalization()(y)
+        y = Activation('relu')(y)
 
-        if num_chan != self.filters or self.strides > 1:
-            self.proj_conv = conv1d(self.filters, 1, self.strides)
-            self.proj_bn = BatchNormalization(momentum=0.9, epsilon=1e-5)        
-            self.projection = True
-        else:
-            self.projection = False
-        
-        super().build(input_shape)
-    
-    def call(self, x, **kwargs):
-        shortcut = x
-        
-        if self.projection:
-            shortcut = self.proj_conv(shortcut)
-            shortcut = self.proj_bn(shortcut) 
-        
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu1(x)
-        x = self.dropout1(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu2(x + shortcut)       
-        
-        return x
+        y = Conv1D(filters, kernel_size=kernel_size, strides=1, padding='same')(y)
+        y = BatchNormalization()(y)
 
-class ResNet(Layer):
-    def __init__(self, blocks=(2,2,2,2), filters=(64, 128, 256, 512),
-                 kernel_size=(3, 3, 3, 3), block_fn=ResidualBlock, 
-                 dropout=0.1, **kwargs):
-        super(ResNet, self).__init__(**kwargs)
-        self.filters = filters
-        self.block_nums = blocks
-        self.kernel_size = kernel_size
-        self.block_fn = block_fn
-        self.dropout = dropout
-        self.loss = 'categorical_crossentropy'
-        self.model_name = 'resnet'
-    
-    def build(self, input_shape):
-        self.conv1 = conv1d(64, 7, 2)
-        self.bn1 = BatchNormalization(momentum=0.9, epsilon=1e-5)
-        self.relu1 = ReLu()
-        self.maxpool1 = MaxPooling1D(3, 2, padding='same')
-        self.blocks = []
+        if stride > 1:
+            x = Conv1D(filters, kernel_size=1, strides=stride, padding='same')(x)
+
+        out = Add()([x, y])
+        out = Activation('relu')(out)
+        return out
         
-        for stage, num_blocks in enumerate(self.block_nums):
-            for block in range(num_blocks):
-                strides = 2 if block == 0 and stage > 0 else 1
-                res_block = self.block_fn(self.filters[stage], self.kernel_size[stage], strides, self.dropout)
-                self.blocks.append(res_block)
         
-        self.global_pool = GlobalAveragePooling1D()
-        super().build(input_shape)
-    
-    def get_optimizer(self, lr):
-        return Adam(learning_rate=lr)
-    
+        
+    def fit(self, X_train, y_train, X_val, y_val):
+        input_layer = Input(shape=(1000, self.leads))
+        x = Conv1D(64, kernel_size=7, strides=2, padding='same')(input_layer)
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        
+        for i in range(len(self.filters)):
+            x = self.residual_block(x, filters=self.filters[i])
+        
+        # Global Average Pooling and Dense Layer
+        x = GlobalAveragePooling1D()(x)
+        output_layer = Dense(self.n_classes, activation='softmax')(x)
+        
+        model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
+        
+        # Callbacks
+        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_AUC', patience=3, verbose=1, min_delta=0, mode='max')
+        mc_loss = tf.keras.callbacks.ModelCheckpoint(self.outputfolder+'best_loss_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
+        logger = tf.keras.callbacks.CSVLogger(self.outputfolder+'training.log')
+        
+        model.compile(loss=tf.keras.losses.BinaryCrossentropy(),
+                        optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
+                        metrics=[tf.keras.metrics.BinaryAccuracy(name='accuracy',threshold=0.5),
+                                tf.keras.metrics.Recall(name='recall'),
+                                tf.keras.metrics.AUC(num_thresholds=200,
+                                                    curve="ROC",
+                                                    summation_method='interpolation',
+                                                    name="AUC",
+                                                    multi_label=True,
+                                                    label_weights=None)])
+        
+        model.fit(X_train, y_train, batch_size=self.batchsize, epochs=self.epochs, 
+                  validation_data=(X_val, y_val), callbacks=[early_stopping, mc_loss, logger])
+        
+        model.save(self.outputfolder+"last_model.h5") 
+        
+    def predict(self, X):
+        model = load_model(self.outputfolder+"last_model.h5")
+        return model.predict(X)
     
     @staticmethod
     def get_name():
-        return 'resnet'        
+        return 'resnet'
+         
+            

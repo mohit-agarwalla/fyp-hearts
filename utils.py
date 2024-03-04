@@ -15,6 +15,7 @@ import time
 import tensorflow as tf
 import torch
 import random
+from tensorflow.keras.metrics import AUC
 
 NOISE_DB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\mit-bih-noise-stress-test-database-1.0.0"
 PTB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\PTB-XL"
@@ -810,3 +811,41 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, batch, logs={}):
         self.times.append(time.time() - self.epoch_time_start)
+
+class CustomMetric(tf.keras.metrics.Metric):
+    def __init__(self, beta=0.5, name='custom_metric', **kwargs):
+        super(CustomMetric, self).__init__(name=name, **kwargs)
+        self.beta = beta
+        self.auc = AUC()
+        self.tp = self.add_weight(name='tp', initializer='zeros')
+        self.tn = self.add_weight(name='tn', initializer='zeros')
+        self.fp = self.add_weight(name='fp', initializer='zeros')
+        self.fn = self.add_weight(name='fn', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Update the state for AUC
+        self.auc.update_state(y_true, y_pred, sample_weight)
+        # Update the state for TP, TN, FP, FN
+        y_pred = tf.round(y_pred)  # Assuming y_pred are probabilities
+        true_positives = tf.equal(tf.logical_and(tf.equal(y_true, 1), tf.equal(y_pred, 1)), True)
+        true_negatives = tf.equal(tf.logical_and(tf.equal(y_true, 0), tf.equal(y_pred, 0)), True)
+        false_positives = tf.equal(tf.logical_and(tf.equal(y_true, 0), tf.equal(y_pred, 1)), True)
+        false_negatives = tf.equal(tf.logical_and(tf.equal(y_true, 1), tf.equal(y_pred, 0)), True)
+
+        self.tp.assign_add(tf.reduce_sum(tf.cast(true_positives, self.dtype)))
+        self.tn.assign_add(tf.reduce_sum(tf.cast(true_negatives, self.dtype)))
+        self.fp.assign_add(tf.reduce_sum(tf.cast(false_positives, self.dtype)))
+        self.fn.assign_add(tf.reduce_sum(tf.cast(false_negatives, self.dtype)))
+
+    def result(self):
+        # Compute the custom metric
+        accuracy_like = (self.tp + self.tn + self.fp) / (self.tp + self.tn + self.fp + self.fn)
+        return (1 - self.beta) * self.auc.result() + self.beta * accuracy_like
+
+    def reset_states(self):
+        # Reset the state of the metric
+        self.auc.reset_states()
+        self.tp.assign(0)
+        self.tn.assign(0)
+        self.fp.assign(0)
+        self.fn.assign(0)

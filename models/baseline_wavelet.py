@@ -72,7 +72,7 @@ def get_single_ecg_features(signal, waveletname='db6'):
         features.append(channel_features)
     return np.array(features).flatten()
 
-def get_ecg_features(ecg_data, parallel=True):
+def get_ecg_features(ecg_data, parallel=False):
     if parallel:
         pool = multiprocessing.Pool(4)
         return np.array(pool.map(get_single_ecg_features, ecg_data))
@@ -103,7 +103,7 @@ class WaveletModel():
         self.tree = 'hist'
     
     def fit(self, X_train, y_train, X_val,y_val):
-        XF_train = get_ecg_features(X_train, parallel=True)
+        XF_train = get_ecg_features(X_train, parallel=False)
         XF_val = get_ecg_features(X_val)
         print(XF_train)
         print(XF_train.shape)
@@ -142,14 +142,14 @@ class WaveletModel():
             x = Dense(self.n_dense_dim, activation=self.activation)(input_x)
             x = Dropout(self.dropout)(x)
             y = Dense(self.n_classes, activation=self.final_activation)(x)
-            self.model = Model(input_x, y)
+            model = Model(input_x, y)
             
-            self.model.compile(optimizer='adamax', loss='categorical_crossentropy') # metrics=[keras_macro_auc]
+            model.compile(optimizer='adamax', loss='binary_crossentropy') # metrics=[keras_macro_auc]
             # monitor validation error
             # mc_score = ModelCheckpoint(self.outputfolder +'best_score_model.h5', monitor='val_keras_macro_auroc', mode='max', verbose=1, save_best_only=True)
             mc_loss = ModelCheckpoint(self.outputfolder+'best_loss_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
-            self.model.fit(XFT_train, y_train, validation_data=(XFT_val, y_val), epochs=self.epochs, batch_size=128, callbacks=[mc_loss])#, mc_score)
-            self.model.save(self.outputfolder+'last_model.h5')
+            model.fit(XFT_train, y_train, validation_data=(XFT_val, y_val), epochs=self.epochs, batch_size=128, callbacks=[mc_loss])#, mc_score)
+            model.save(self.outputfolder+'last_model.h5')
     
     def predict(self, X):
         XF = get_ecg_features(X)

@@ -12,6 +12,9 @@ from itertools import repeat
 from models.baseline_wavelet import WaveletModel
 from models.baseline_resnet import ResNet
 from models.classifer import Classifier
+# from models.baseline_conv1d import SimpleCNN
+from models.baseline_ann import BaselineANN
+from models.lstm import LSTM_Model
 from tensorflow.keras.callbacks import EarlyStopping
 
 
@@ -126,19 +129,40 @@ class ECG_Experiment:
                 X_test = self.X_test
                 X_val = self.X_val
             
+            if 'lead1' in modelname:
+                leads = 1
+            else:
+                leads = 12
+            
             # load respective model
             if modeltype == 'WAVELET':
                 model = WaveletModel(n_classes, self.sampling_frequency, mpath, **modelparams)
                 # fit model
                 model.fit(X_train, self.y_train, X_val, self.y_val)
-            if modeltype == 'RESNET':
+                model.save(self.outputfolder+'last_model.h5')
+            
+            elif modeltype == 'LSTM':
+                model = LSTM_Model(n_classes, self.sampling_frequency, mpath, leads, **modelparams) 
+                model.fit(X_train, self.y_train, X_val,self.y_val)
+                
+                model.model.save(self.outputfolder+'last_model.h5')               
+            
+            elif modeltype == 'simple':
+                model = BaselineANN(n_classes=n_classes, freq=self.sampling_frequency, outputfolder=mpath, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+                model.model.save(self.outputfolder+'last_model.h5')
+            
+            elif modeltype == 'RESNET':
                 resnet = ResNet(**modelparams)
-                model = Classifier(model=resnet, input_size=1000, n_classes=n_classes, learning_rate=0.0001)
+                
+                
+                model = Classifier(model=resnet, input_size=1000, n_classes=n_classes, learning_rate=0.0001, leads=leads)
                 model.add_compile()
                 es = EarlyStopping(monitor='val_loss', patience=6)
                 model.fit(X_train, self.y_train, (X_val,self.y_val))
+                model.save(self.outputfolder+'last_model.h5')
                 
-            if modeltype == "fastai_model":  
+            elif modeltype == "fastai_model":  
                 from models.fastai_model import fastai_model
                 model = fastai_model(modelname, n_classes, self.sampling_frequency, mpath,self.input_shape, **modelparams)
                 model.fit(self.X_train, self.y_train, self.X_val, self.y_val) 
