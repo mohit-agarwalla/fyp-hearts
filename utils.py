@@ -321,8 +321,13 @@ def select_data_demo(XX,YY, ctype, min_samples, output_folder, demographics):
     mlb = MultiLabelBinarizer()
     
     if ctype == 'diagnostic':
+        counts = pd.Series(np.concatenate(YY.diagnostic.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.diagnostic = YY.diagnostic.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['diagnostic_len'] = YY.diagnostic.apply(lambda x: len(x))
         X = XX[YY.diagnostic_len > 0]
         Y = YY[YY.diagnostic_len > 0]
+        demographics = demographics[YY.diagnostic_len > 0]
         mlb.fit(Y.diagnostic.values)
         y = mlb.transform(Y.diagnostic.values)
         
@@ -436,7 +441,8 @@ def evaluate_experiment(y_true, y_pred, thresholds):
         pass
     
     # Would be useful to create 
-    results['macro_auc'] = roc_auc_score(y_true, y_pred, average='macro')
+    # results['macro_auc'] = roc_auc_score(y_true, y_pred, average='macro')
+    results['macro_auc'] = AUC()(y_true, y_pred)
     
     return pd.DataFrame(results, index=[0])
 
@@ -811,6 +817,8 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, batch, logs={}):
         self.times.append(time.time() - self.epoch_time_start)
+
+from tensorflow.keras.metrics import AUC
 
 class CustomMetric(tf.keras.metrics.Metric):
     def __init__(self, beta=0.5, name='custom_metric', **kwargs):

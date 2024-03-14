@@ -10,13 +10,18 @@ import numpy as np
 import multiprocessing
 from itertools import repeat
 from models.baseline_wavelet import WaveletModel
-from models.baseline_resnet import ResNet
+from models.baseline_resnet import Resnet
 from models.classifer import Classifier
 # from models.baseline_conv1d import SimpleCNN
 from models.baseline_ann import BaselineANN
-from models.lstm import LSTM_Model
+# from models.lstm import LSTM_Model
+from models.lstm_model import Basic_LSTM
 from tensorflow.keras.callbacks import EarlyStopping
-
+from models.baseline_resnet import Resnet
+from models.cpsc_winner import GruAttNet
+from models.lenet_5 import LeNet_5
+from models.vggnet import VGGNet
+from models.alexnet import AlexNet
 
 class ECG_Experiment:
     """
@@ -63,8 +68,8 @@ class ECG_Experiment:
         # Preprocess label data
         self.labels = utils.compute_label_aggregations(self.raw_labels, self.datafolder, self.task)
         
-        self.data, self.labels, self.Y, _ = utils.select_data(self.data, self.labels, self.task, self.min_samples, self.outputfolder+self.experiment_name+'/data/')
         # One hot encode relevant data
+        self.data, self.labels, self.Y, _ = utils.select_data(self.data, self.labels, self.task, self.min_samples, self.outputfolder+self.experiment_name+'/data/')
         self.input_shape = self.data[0].shape
         
         # 10th fold for testing (9th for now)
@@ -135,14 +140,30 @@ class ECG_Experiment:
                 leads = 12
             
             # load respective model
+            if modeltype == 'VGGNet':
+                model = VGGNet(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+            
+            if modeltype=='AlexNet':
+                model = AlexNet(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+                
+            if modeltype == 'LENET':
+                model = LeNet_5(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+            
+            if modeltype == 'AttNet':
+                model = GruAttNet(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+            
             if modeltype == 'WAVELET':
                 model = WaveletModel(n_classes, self.sampling_frequency, mpath, **modelparams)
                 # fit model
                 model.fit(X_train, self.y_train, X_val, self.y_val)
-                model.save(self.outputfolder+'last_model.h5')
+                # model.save(self.outputfolder+'last_model.h5')
             
             elif modeltype == 'LSTM':
-                model = LSTM_Model(n_classes, self.sampling_frequency, mpath, leads, **modelparams) 
+                model = Basic_LSTM(n_classes, self.sampling_frequency, mpath, leads=leads, **modelparams)
                 model.fit(X_train, self.y_train, X_val,self.y_val)
                 
                 model.model.save(self.outputfolder+'last_model.h5')               
@@ -153,14 +174,18 @@ class ECG_Experiment:
                 model.model.save(self.outputfolder+'last_model.h5')
             
             elif modeltype == 'RESNET':
-                resnet = ResNet(**modelparams)
+                # resnet = ResNet(**modelparams)
                 
                 
-                model = Classifier(model=resnet, input_size=1000, n_classes=n_classes, learning_rate=0.0001, leads=leads)
-                model.add_compile()
-                es = EarlyStopping(monitor='val_loss', patience=6)
-                model.fit(X_train, self.y_train, (X_val,self.y_val))
-                model.save(self.outputfolder+'last_model.h5')
+                # model = Classifier(model=resnet, input_size=1000, n_classes=n_classes, learning_rate=0.0001, leads=leads)
+                # model.add_compile()
+                # es = EarlyStopping(monitor='val_loss', patience=6)
+                # model.fit(X_train, self.y_train, (X_val,self.y_val))
+                # model.save(self.outputfolder+'last_model.h5')
+                model = Resnet(n_classes, self.sampling_frequency, mpath, leads=leads, **modelparams)
+                model.fit(X_train, self.y_train, X_val, self.y_val)
+                # model.save(mpath+'last_model.h5')
+                
                 
             elif modeltype == "fastai_model":  
                 from models.fastai_model import fastai_model
@@ -174,28 +199,28 @@ class ECG_Experiment:
             model.predict(X_val).dump(mpath+'y_val_pred.npy')
             model.predict(X_test).dump(mpath+'y_test_pred.npy')
             
-        modelname = 'ensemble'
+        # modelname = 'ensemble'
         
-        # create ensemble preds by simple mean across all model preds
-        ensemblepath = self.outputfolder+self.experiment_name+ '/models/'+modelname+'/'
-        # create folder for model outputs
-        if not os.path.exists(ensemblepath):
-            os.makedirs(ensemblepath)
-        if not os.path.exists(ensemblepath+'/results/'):
-            os.makedirs(ensemblepath+'/results/')
+        # # create ensemble preds by simple mean across all model preds
+        # ensemblepath = self.outputfolder+self.experiment_name+ '/models/'+modelname+'/'
+        # # create folder for model outputs
+        # if not os.path.exists(ensemblepath):
+        #     os.makedirs(ensemblepath)
+        # if not os.path.exists(ensemblepath+'/results/'):
+        #     os.makedirs(ensemblepath+'/results/')
         
-        ensemble_train, ensemble_val, ensemble_test = [], [], []
-        for model_desc in os.listdir(self.outputfolder+self.experiment_name+'/models/'):
-            if model_desc not in ['ensemble', 'naive']:
-                mpath = self.outputfolder+self.experiment_name+'/models/'+model_desc+'/'
-                ensemble_train.append(np.load(mpath+'y_train_pred.npy', allow_pickle=True))
-                ensemble_val.append(np.load(mpath+'y_val_pred.npy', allow_pickle=True))
-                ensemble_test.append(np.load(mpath+'y_test_pred.npy', allow_pickle=True))
+        # ensemble_train, ensemble_val, ensemble_test = [], [], []
+        # for model_desc in os.listdir(self.outputfolder+self.experiment_name+'/models/'):
+        #     if model_desc not in ['ensemble', 'naive']:
+        #         mpath = self.outputfolder+self.experiment_name+'/models/'+model_desc+'/'
+        #         ensemble_train.append(np.load(mpath+'y_train_pred.npy', allow_pickle=True))
+        #         ensemble_val.append(np.load(mpath+'y_val_pred.npy', allow_pickle=True))
+        #         ensemble_test.append(np.load(mpath+'y_test_pred.npy', allow_pickle=True))
             
-        # dump mean predictions
-        np.array(ensemble_train).mean(axis=0).dump(ensemblepath + 'y_train_pred.npy')
-        np.array(ensemble_test).mean(axis=0).dump(ensemblepath + 'y_test_pred.npy')
-        np.array(ensemble_val).mean(axis=0).dump(ensemblepath + 'y_val_pred.npy')
+        # # dump mean predictions
+        # np.array(ensemble_train).mean(axis=0).dump(ensemblepath + 'y_train_pred.npy')
+        # np.array(ensemble_test).mean(axis=0).dump(ensemblepath + 'y_test_pred.npy')
+        # np.array(ensemble_val).mean(axis=0).dump(ensemblepath + 'y_val_pred.npy')
     
     def evaluate(self, n_bootstrapping_samples=100, n_jobs=2, bootstrap_eval=False, dumped_bootstraps=True):
         # get labels

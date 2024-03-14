@@ -10,9 +10,14 @@ import numpy as np
 import multiprocessing
 from itertools import repeat
 from models.wavelet_demo import WaveletModel
-from models.baseline_resnet import ResNet
+# from models.baseline_resnet import ResNet
 from models.classifer import Classifier
+from models.simple_ann_demo import ANNDemo
+from models.alenxet_demo import AlexNetDemo
+from models.lenet_5_demo import LeNet_5_Demo
+from models.resnet_demo import ResNetDemo
 from tensorflow.keras.callbacks import EarlyStopping
+from models.attnet_demo import AttNet_Demo, AttentionWithContext,GRUAttNet_Demo
 
 
 class DEMO_Experiment:
@@ -133,14 +138,18 @@ class DEMO_Experiment:
             
             n_classes = self.Y.shape[1]
             
-            if 'lead1' in modelname:
-                X_train = self.X_train[:,:,0].reshape(self.X_train.shape[0], self.X_train.shape[1], 1)
-                X_test = self.X_test[:,:,0].reshape(self.X_test.shape[0], self.X_test.shape[1], 1)
-                X_val = self.X_val[:,:,0].reshape(self.X_val.shape[0], self.X_val.shape[1], 1)
-            else:
-                X_train = self.X_train
-                X_test = self.X_test
-                X_val = self.X_val
+            # if 'lead1' in modelname:
+            #     X_train = self.X_train[:,:,0].reshape(self.X_train.shape[0], self.X_train.shape[1], 1)
+            #     X_test = self.X_test[:,:,0].reshape(self.X_test.shape[0], self.X_test.shape[1], 1)
+            #     X_val = self.X_val[:,:,0].reshape(self.X_val.shape[0], self.X_val.shape[1], 1)
+            # else:
+            #     X_train = self.X_train
+            #     X_test = self.X_test
+            #     X_val = self.X_val
+            X_train = self.X_train[:,:,0].reshape(self.X_train.shape[0], self.X_train.shape[1], 1)
+            X_test = self.X_test[:,:,0].reshape(self.X_test.shape[0], self.X_test.shape[1], 1)
+            X_val = self.X_val[:,:,0].reshape(self.X_val.shape[0], self.X_val.shape[1], 1)
+        
             
             if '+demo+' in modelname:
                 demographic_train = self.demographic_train
@@ -154,13 +163,31 @@ class DEMO_Experiment:
                 model = WaveletModel(n_classes, self.sampling_frequency, mpath, **modelparams)
                 # fit model
                 model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+            
+            if modeltype=='ANN':
+                model = ANNDemo(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+            
+            if modeltype=='AlexNet':
+                model = AlexNetDemo(n_classes, self.sampling_frequency, mpath, **modelparams)  
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+            
+            if modeltype == 'LeNet':
+                model = LeNet_5_Demo(n_classes, self.sampling_frequency, mpath, **mpath)
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+            
             if modeltype == 'RESNET':
-                resnet = ResNet(**modelparams)
-                model = Classifier(model=model, input_size=1000, learning_rate=0.0001)
-                model.add_compile()
-                es = EarlyStopping(monitor='val_loss', patience=6)
-                model.fit(X_train, self.y_train, (X_val,self.y_val), mpath)
+                model = ResNetDemo(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)  
                 
+            if modeltype == 'AttNet':
+                model = AttNet_Demo(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+
+            if modeltype == 'GRUAttNet':
+                model = GRUAttNet_Demo(n_classes, self.sampling_frequency, mpath, **modelparams)
+                model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
+                      
 
             # predict and dump
             model.predict(X_train, demographic_train).dump(mpath+'y_train_pred.npy')
