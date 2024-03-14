@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, GlobalAveragePooling1D, Convolution1D, BatchNormalization, Input, Activation, Add, Dropout, ReLU, LeakyReLU
+from keras.layers import Dense, GlobalAveragePooling1D, Convolution1D, BatchNormalization, Input, Activation, Add, Dropout, ReLU, LeakyReLU, Layer
 from keras.models import Sequential, Model
 from keras.utils import plot_model
 import matplotlib.pyplot as plt

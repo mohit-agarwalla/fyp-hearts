@@ -173,7 +173,7 @@ class DEMO_Experiment:
                 model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
             
             if modeltype == 'LeNet':
-                model = LeNet_5_Demo(n_classes, self.sampling_frequency, mpath, **mpath)
+                model = LeNet_5_Demo(n_classes, self.sampling_frequency, mpath, **modelparams)
                 model.fit(X_train, self.y_train, demographic_train, X_val, self.y_val, demographic_val)
             
             if modeltype == 'RESNET':
