@@ -158,7 +158,7 @@ def compute_label_aggregations(df, folder, ctype):
     df['scp_codes_len'] = df.scp_codes.apply(lambda x: len(x))
 
     # Find the codes from the scp_statements folder 
-    aggregation_df = pd.read_csv(folder+'scp_statements.csv', index_col=0)
+    aggregation_df = pd.read_csv(folder+'scp_statements_adjusted.csv', index_col=0)
     
     # if looking at a specific task
     if ctype in ['diagnostic', 'subdiagnostic', 'superdiagnostic']:
@@ -226,6 +226,21 @@ def compute_label_aggregations(df, folder, ctype):
 
         df['rhythm'] = df.scp_codes.apply(aggregate_rhythm)
         df['rhythm_len'] = df.rhythm.apply(lambda x: len(x))
+    elif ctype == 'priority':
+        priority_agg_df = aggregation_df[aggregation_df.priority == 1.0]
+        
+        def aggregate_priority(y_dic):
+            tmp = []
+            for key in y_dic.keys():
+                if key in priority_agg_df.index:
+                    c = key
+                    if str(c) != 'nan':
+                        tmp.append(c)
+            return list(set(tmp))
+        
+        df['priority'] = df.scp_codes.apply(aggregate_priority)
+        df['priority_len'] = df.priority.apply(lambda x: len(x))
+    
     elif ctype == 'all':
         df['all_scp'] = df.scp_codes.apply(lambda x: list(set(x.keys())))
 
@@ -287,6 +302,16 @@ def select_data(XX,YY, ctype, min_samples, output_folder):
         mlb.fit(Y.form.values)
         y = mlb.transform(Y.form.values)
     
+    elif ctype == 'priority':
+        counts = pd.Series(np.concatenate(YY.priority.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.priority = YY.priority.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['priority_len'] = YY.priority.apply(lambda x: len(x))
+        X = XX[YY.priority_len > 0]
+        Y = YY[YY.priority_len > 0]
+        mlb.fit(Y.priority.values)
+        y = mlb.transform(Y.priority.values)
+    
     elif ctype == 'rhythm':
         counts = pd.Series(np.concatenate(YY.rhythm.values)).value_counts()
         counts = counts[counts > min_samples]
@@ -306,6 +331,8 @@ def select_data(XX,YY, ctype, min_samples, output_folder):
         Y = YY[YY.all_scp_len > 0]
         mlb.fit(Y.all_scp.values)
         y = mlb.transform(Y.all_scp.values)
+    
+    
     
     else:
         pass
