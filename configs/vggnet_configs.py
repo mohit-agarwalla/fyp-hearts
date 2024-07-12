@@ -1,5 +1,5 @@
 conf_vggnet = {
-    'modelname': 'VGGNet+lead1', 
+    'modelname': 'VGGNet', 
     'modeltype': 'VGGNet',
     'modelparams': dict(leads=12)
 }

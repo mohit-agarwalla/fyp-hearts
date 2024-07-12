@@ -23,6 +23,30 @@ conf_wavelet_demo_rf = {
 }
 
 conf_wavelet_nn = {
+    'modelname': 'NewWavelet+NN', 
+    'modeltype': 'NewWavelet',
+    'modelparams': dict(regularizer_C=0.001, classifier='NN')
+}
+
+conf_newwavelet2_demo_nn = {
+    'modelname': 'NewWavelet+demo+2+NN', 
+    'modeltype': 'HCF2',
+    'modelparams': dict(regularizer_C=0.001, classifier='NN')
+}
+
+conf_wavelet2_demo_nn = {
+    'modelname': 'Wavelet+demo+2+NN', 
+    'modeltype': 'WAVELET2',
+    'modelparams': dict(regularizer_C=0.001, classifier='NN')
+}
+
+conf_newwavelet_demo_nn = {
+    'modelname': 'NewWavelet+demo+NN', 
+    'modeltype': 'NewWavelet',
+    'modelparams': dict(regularizer_C=0.001, classifier='NN')
+}
+
+conf_newwavelet_nn = {
     'modelname': 'Wavelet+NN', 
     'modeltype': 'WAVELET',
     'modelparams': dict(regularizer_C=0.001, classifier='NN')

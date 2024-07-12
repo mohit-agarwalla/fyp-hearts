@@ -16,6 +16,12 @@ conf_wavelet_standard_nn = {
     'modelparams': dict(regularizer_C=0.001, classifier='NN')
 }
 
+conf_wavelet_500_standard_nn = {
+    'modelname': 'Wavelet+NN+500', 
+    'modeltype': 'WAVELET',
+    'modelparams': dict(regularizer_C=0.001, classifier='NN', freq=500)
+}
+
 conf_wavelet_single_rf = {
     'modelname': 'Wavelet+RF+lead1', 
     'modeltype': 'WAVELET',
@@ -82,3 +88,5 @@ conf_wavelet_single_xgb = {
     'modeltype': 'WAVELET',
     'modelparams': dict(tree='hist', classifier='XGB')
 }
+
+

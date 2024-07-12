@@ -9,3 +9,9 @@ conf_lstm_lead1 = {
     'modeltype': 'LSTM',
     'modelparams': dict()
 }
+
+conf_lstm_attn = {
+    'modelname': 'LSTM+Attn+lead1',
+    'modeltype': 'LSTMwAttn',
+    'modelparams': dict()
+}
