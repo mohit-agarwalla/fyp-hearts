@@ -16,6 +16,7 @@ import tensorflow as tf
 import torch
 import random
 from tensorflow.keras.metrics import AUC
+import keras
 
 NOISE_DB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\mit-bih-noise-stress-test-database-1.0.0"
 PTB_PATH = "C:\Mohit\Imperial\FYP - Local\\fyp-hearts\datasets\PTB-XL"
@@ -414,6 +415,17 @@ def select_data_demo(XX,YY, ctype, min_samples, output_folder, demographics):
         mlb.fit(Y.all_scp.values)
         y = mlb.transform(Y.all_scp.values)
     
+    elif ctype == 'priority':
+        counts = pd.Series(np.concatenate(YY.priority.values)).value_counts()
+        counts = counts[counts > min_samples]
+        YY.priority = YY.priority.apply(lambda x: list(set(x).intersection(set(counts.index.values))))
+        YY['priority_len'] = YY.priority.apply(lambda x: len(x))
+        X = XX[YY.priority_len > 0]
+        Y = YY[YY.priority_len > 0]
+        demographics = demographics[YY.priority_len > 0]
+        mlb.fit(Y.priority.values)
+        y = mlb.transform(Y.priority.values)
+    
     else:
         pass
     
@@ -469,20 +481,25 @@ def evaluate_experiment(y_true, y_pred, thresholds):
     
     # Would be useful to create 
     # results['macro_auc'] = roc_auc_score(y_true, y_pred, average='macro')
-    results['macro_auc'] = AUC()(y_true, y_pred)
+    zero_cols = np.all(y_true == 0, axis=0)
+    y_true_new = y_true[:, ~zero_cols]
+    y_pred_new = y_pred[:, ~zero_cols]
+    results['macro_auc'] = roc_auc_score(y_true_new, y_pred_new)
     
     return pd.DataFrame(results, index=[0])
 
 def generate_summary_table(selection=None, exps=None, folder='output/'):
     if exps is None:
-        exps = ['exp0', 'exp1', 'exp1.1', 'exp1.1.1', 'exp2', 'exp3']
+        exps = ['exp0', 'exp1', 'exp1.1', 'exp1.1.1', 'exp2', 'exp3','exp4']
     metric1 = 'macro_auc'
     
     # getmodels
     models = {}
     for i,exp in enumerate(exps):
         if selection is None:
-            exp_models = [m.split('/')[-1] for m in glob.glob(f'{folder}{exp}/models/*')]
+            exp_models = [m.split('/')[-1] for m in glob.glob(f'{os.getcwd()}{folder}{exp}/models/*')]
+            if len(exp_models)==0:
+                exp_models = [m.split('/')[-1] for m in glob.glob(f'{folder}/{exp}/models/*')]
             print(exp_models)
         else:
             exp_models = selection
@@ -501,7 +518,10 @@ def generate_summary_table(selection=None, exps=None, folder='output/'):
         for e in exps:
             try:
                 if 'models' in model:
-                    me_res = pd.read_csv(folder+str(e)+'/'+str(model)+'/results/te_results.csv', index_col=0)
+                    if 'demo' in folder:
+                        me_res =pd.read_csv(os.getcwd()+folder+str(e)+'/'+str(model)+'/results/demo_te_results.csv', index_col=0)
+                    else:
+                        me_res = pd.read_csv(os.getcwd()+"/"+folder+str(e)+'/'+str(model)+'/results/te_results.csv', index_col=0)
                 else:
                     me_res = pd.read_csv(folder+str(e)+'/models/'+str(model)+'/results/te_results.csv', index_col=0)
                 
@@ -516,7 +536,7 @@ def generate_summary_table(selection=None, exps=None, folder='output/'):
     df_index = df[df.Method.isin(['naive', 'ensemble'])]
     df_rest = df[~df.Method.isin(['naive', 'ensemble'])]
     df = pd.concat([df_rest, df_index])
-    df.to_csv(folder+'results_ptbxl.csv')
+    df.to_csv(os.getcwd()+"/"+folder+'results_ptbxl.csv')
     
     print(df)
     return df
@@ -847,6 +867,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
 from tensorflow.keras.metrics import AUC
 
+@keras.utils.register_keras_serializable()
 class CustomMetric(tf.keras.metrics.Metric):
     def __init__(self, beta=0.5, name='custom_metric', **kwargs):
         super(CustomMetric, self).__init__(name=name, **kwargs)
